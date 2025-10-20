@@ -6,7 +6,7 @@ from botorch.optim import optimize_acqf
 from scipy.stats import qmc
 
 from benchmark_definition import BENCHMARKS
-from utils import train_model, create_acquisition_function, evaluate_batch, PosteriorMean
+from utils import train_model, create_acquisition_function, evaluate_batch
 
 data_type = torch.double
 
@@ -18,7 +18,8 @@ def run_bo_problem(problem_name,
                    kernel="Matern52",
                    batch_size=1,
                    seed=12345,
-                   save_path="results.json"):
+                   save_path="results.json",
+                   notes=None):
     torch.manual_seed(int(seed))
     prob = BENCHMARKS[problem_name]
     d, lb, ub, fn = prob["dim"], prob["lb"], prob["ub"], prob["fn"]
@@ -36,7 +37,9 @@ def run_bo_problem(problem_name,
                             lb,
                             problem_name,
                             seed,
-                            total_samples, ub)
+                            total_samples,
+                            ub,
+                            notes)
     sampler = qmc.LatinHypercube(d=d, seed=int(seed))
     X_init = torch.tensor(sampler.random(n=initial_samples), dtype=data_type)
 
@@ -68,7 +71,7 @@ def run_bo_problem(problem_name,
 
 
 def save_general_info(acquisition, batch_size, bo_iterations, d, initial_samples, kernel, lb, problem_name, seed,
-                      total_samples, ub):
+                      total_samples, ub, notes):
     return {
         "problem_metadata": {
             "test_function": problem_name,
@@ -88,7 +91,7 @@ def save_general_info(acquisition, batch_size, bo_iterations, d, initial_samples
             "seed": int(seed)
         },
         "extra_info": {
-            "team_notes": f"Basic BO with {acquisition} using torch-only implementation",
+            "team_notes": notes,
             "code_reference": "",
             "other_files": []
         },
@@ -105,45 +108,21 @@ def save_sampled_locations(candidate, iter_block, lb, ub, y_next):
         x_orig = (lb + (ub - lb) * x).tolist()
         iter_block["sampled_locations"].append({
             "locations": x_orig,
-            "evaluations": y.item()})
+            "evaluations": -y.item()})
 
 
 def save_initial_samples(X_init, lb, out, ub, y_init):
     for i, (x, y) in enumerate(zip(X_init, y_init), start=1):
         x_orig = (lb + (ub - lb) * x).tolist()
         out["initial_samples"]["sampled_locations"].append(
-            {"iterations": i, "locations": x_orig, "evaluations": y.item()})
+            {"iterations": i, "locations": x_orig, "evaluations": -y.item()})
 
 
-def compute_next_candidate(batch_size, d, ei, gp):
-    bounds_unit = torch.stack([torch.zeros(d, dtype=torch.double), torch.ones(d, dtype=torch.double)])
-    argmax_gp, max_gp = compute_best_using_smart_init(gp, bounds_unit, ei)
-    candidate, acq_value = optimize_acqf(acq_function=ei,
+def compute_next_candidate(batch_size, d, acqf, gp):
+    bounds_unit = torch.stack([torch.zeros(d, dtype=data_type), torch.ones(d, dtype=data_type)])
+    candidate, acq_value = optimize_acqf(acq_function=acqf,
                                          bounds=bounds_unit,
                                          q=batch_size,
                                          num_restarts=20,
                                          raw_samples=512)
-    if max_gp > acq_value:
-        return argmax_gp
     return candidate
-
-
-def compute_best_using_smart_init(model, bounds, ei):
-    x_dim = bounds.shape[1]
-    best_x, min_mean = optimize_acqf(
-        acq_function=PosteriorMean(model),
-        bounds=bounds,
-        q=1,
-        num_restarts=20,
-        raw_samples=512,
-    )
-    candidate, acq_value = optimize_acqf(
-        acq_function=ei,
-        bounds=bounds,
-        q=1,
-        num_restarts=20,
-        raw_samples=512,
-        batch_initial_conditions=best_x
-    )
-
-    return candidate.reshape(1, x_dim), acq_value
