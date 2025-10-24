@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     seeds = range(1, 31)
 
-    for acqf_type in ["EI", "KG"]:
+    for acqf_type in ["KG"]:
         base_folder = Path(f"results/{acqf_type}")
         base_folder.mkdir(exist_ok=True)
         for name, cfg in experiments.items():
@@ -28,6 +28,7 @@ if __name__ == "__main__":
                         problem_name=name,
                         total_samples=cfg["total_samples"],
                         initial_samples=cfg["initial_samples"],
+                        recommendation_type="gp",
                         acquisition=acqf_type,
                         batch_size=1,
                         seed=seed,

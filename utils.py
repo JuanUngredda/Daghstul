@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import torch
-from botorch.acquisition import ExpectedImprovement, qKnowledgeGradient
+from botorch.acquisition import ExpectedImprovement, AnalyticAcquisitionFunction, qKnowledgeGradient
 from botorch.exceptions import UnsupportedError
 from botorch.fit import fit_gpytorch_mll
 from botorch.models import SingleTaskGP
+from botorch.models.model import Model
 from botorch.models.transforms import Standardize
 from botorch.posteriors import Posterior
 from botorch.sampling.normal import NormalMCSampler
+from botorch.utils import t_batch_mode_transform
 from gpytorch.mlls import ExactMarginalLogLikelihood
+from torch import Tensor
 from torch.quasirandom import SobolEngine
 
 
@@ -39,6 +42,17 @@ def train_model(X_all, y_all):
     mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
     fit_gpytorch_mll(mll)
     return gp
+
+
+class PosteriorMean(AnalyticAcquisitionFunction):
+    def __init__(self, model: Model) -> None:
+        super().__init__(model=model)
+
+    @t_batch_mode_transform(expected_q=1)
+    def forward(self, X: Tensor) -> Tensor:
+        posterior = self.model.posterior(X)
+        mean = posterior.mean.squeeze(-1)
+        return mean.squeeze(-1)
 
 
 class QuantileSampler(NormalMCSampler):

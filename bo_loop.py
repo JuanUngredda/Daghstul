@@ -6,7 +6,7 @@ from botorch.optim import optimize_acqf
 from scipy.stats import qmc
 
 from benchmark_definition import BENCHMARKS
-from utils import train_model, create_acquisition_function, evaluate_batch
+from utils import train_model, create_acquisition_function, evaluate_batch, PosteriorMean
 
 data_type = torch.double
 
@@ -14,6 +14,7 @@ data_type = torch.double
 def run_bo_problem(problem_name,
                    total_samples,
                    initial_samples=10,
+                   recommendation_type="gp",
                    acquisition="EI",
                    kernel="Matern52",
                    batch_size=1,
@@ -52,14 +53,15 @@ def run_bo_problem(problem_name,
     for it in range(1, bo_iterations + 1):
         gp = train_model(X_all, y_all)
         acquisition_function = create_acquisition_function(acquisition=acquisition, gp=gp, y_all=y_all)
-        candidate = compute_next_candidate(batch_size, d, acquisition_function, gp)
+        candidate = compute_next_candidate(batch_size, d, acquisition_function)
         y_next = evaluate_batch(fn, candidate, lb, ub)
         X_all = torch.cat([X_all, candidate])
         y_all = torch.cat([y_all, y_next])
 
+        # Recommend solution
+        x_recommended = recommend_final_solution(d, gp, X_all, y_all, recommendation_type)
         # --- Save iteration info ---
-        iter_block = {"iterations": it, "batch_size": batch_size, "sampled_locations": []}
-        save_sampled_locations(candidate, iter_block, lb, ub, y_next)
+        iter_block = save_sampled_locations(it, batch_size, candidate, lb, ub, y_next, x_recommended)
         out["search_iterations"].append(iter_block)
 
         print(f"[{problem_name}] Iter {it}/{bo_iterations} -> f={y_next.squeeze().tolist()}")
@@ -68,6 +70,22 @@ def run_bo_problem(problem_name,
         with open(save_path, "w") as fh:
             json.dump(out, fh, indent=2)
     return out
+
+
+def recommend_final_solution(d, gp, X_all, y_all, recommendation_type):
+    if recommendation_type == "gp":
+        bounds_unit = torch.stack([torch.zeros(d, dtype=data_type),
+                                   torch.ones(d, dtype=data_type)])
+        candidate, _ = optimize_acqf(acq_function=PosteriorMean(gp),
+                                     bounds=bounds_unit,
+                                     q=1,
+                                     num_restarts=20,
+                                     raw_samples=2048)
+        return candidate
+    elif recommendation_type == "sampled":
+        return X_all[torch.argmax(y_all), :].reshape(1, -1)
+    else:
+        raise NotImplementedError("recommendation type not implemented.")
 
 
 def save_general_info(acquisition, batch_size, bo_iterations, d, initial_samples, kernel, lb, problem_name, seed,
@@ -103,12 +121,15 @@ def save_general_info(acquisition, batch_size, bo_iterations, d, initial_samples
     }
 
 
-def save_sampled_locations(candidate, iter_block, lb, ub, y_next):
+def save_sampled_locations(it, batch_size, candidate, lb, ub, y_next, recommended):
+    iter_block = {"iterations": it, "batch_size": batch_size, "sampled_locations": [], "recommended_location": []}
     for x, y in zip(candidate, y_next):
         x_orig = (lb + (ub - lb) * x).tolist()
         iter_block["sampled_locations"].append({
             "locations": x_orig,
             "evaluations": -y.item()})
+    iter_block["recommended_location"] = recommended.reshape(-1).tolist()
+    return iter_block
 
 
 def save_initial_samples(X_init, lb, out, ub, y_init):
@@ -118,7 +139,7 @@ def save_initial_samples(X_init, lb, out, ub, y_init):
             {"iterations": i, "locations": x_orig, "evaluations": -y.item()})
 
 
-def compute_next_candidate(batch_size, d, acqf, gp):
+def compute_next_candidate(batch_size, d, acqf):
     bounds_unit = torch.stack([torch.zeros(d, dtype=data_type), torch.ones(d, dtype=data_type)])
     candidate, acq_value = optimize_acqf(acq_function=acqf,
                                          bounds=bounds_unit,
