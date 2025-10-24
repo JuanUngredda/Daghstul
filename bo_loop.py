@@ -128,7 +128,7 @@ def save_sampled_locations(it, batch_size, candidate, lb, ub, y_next, recommende
         iter_block["sampled_locations"].append({
             "locations": x_orig,
             "evaluations": -y.item()})
-    iter_block["recommended_location"] = recommended.reshape(-1).tolist()
+    iter_block["recommended_location"] = (lb + (ub - lb) * recommended.reshape(-1)).tolist()
     return iter_block
 
 
