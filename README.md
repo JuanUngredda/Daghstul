@@ -21,12 +21,14 @@ Daghstul/
 - Implemented using **BoTorch’s Expected Improvement** acquisition function.  
 - Evaluated on **analytical benchmark functions**.  
 - Focuses on exploiting known promising regions while maintaining exploration.
+- The .csv follows the first format to save the results.
 
 ### 2. Knowledge Gradient (One-Shot KG)
 - Implemented using **BoTorch’s One-Shot Knowledge Gradient**.  
 - Uses a **Quantile Sampler** with **7 quantiles**.  
 - Aims to quantify the **expected value of information** from evaluating new points.
-
+- The .csv follows the second format to save the results.
+- 
 ## 🔗 Repository
 
 Find the project here:  
